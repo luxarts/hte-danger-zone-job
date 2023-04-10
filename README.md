@@ -15,6 +15,11 @@
      --network hte \
      danger-zone-job
    ```
+   
+### Generate mocks
+```
+mockery --all --inpackage
+```
 
 ### Redis key convention
 
