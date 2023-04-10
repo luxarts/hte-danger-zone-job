@@ -2,9 +2,12 @@ package job
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"github.com/redis/go-redis/v9"
 	"hte-danger-zone-job/internal/controller"
 	"hte-danger-zone-job/internal/defines"
+	"hte-danger-zone-job/internal/domain"
 	"hte-danger-zone-job/internal/repository"
 	"hte-danger-zone-job/internal/service"
 	"log"
@@ -16,9 +19,11 @@ type Job interface {
 }
 
 type job struct {
-	redisClient *redis.Client
-	redisStream string
-	geolocCtrl  controller.GeolocController
+	redisClient         *redis.Client
+	redisChannelGeoloc  string
+	redisChannelNewZone string
+	gCtrl               controller.GeolocController
+	dzcCtrl             controller.DangerZoneCacheController
 }
 
 func New() Job {
@@ -26,51 +31,65 @@ func New() Job {
 	redisClient := initRedisClient()
 
 	// Repository
-	zoneRepo := repository.NewDangerZoneRepository(redisClient)
 	alarmRepo := repository.NewAlarmRepository()
+	dzcRepo := repository.NewDangerZoneCacheRepository(redisClient, os.Getenv(defines.EnvRedisKeyDangerZone))
 
 	// Service
-	zoneSvc := service.NewZoneService(zoneRepo, alarmRepo)
+	zoneSvc := service.NewZoneService(dzcRepo, alarmRepo)
+	dzcSvc := service.NewDangerZoneCacheService(dzcRepo)
 
 	// Controller
-	ctrl := controller.NewGeolocController(zoneSvc)
+	gCtrl := controller.NewGeolocController(zoneSvc)
+	dzcCtrl := controller.NewDangerZoneCacheController(dzcSvc)
 
 	return &job{
-		geolocCtrl:  ctrl,
-		redisClient: redisClient,
-		redisStream: os.Getenv(defines.EnvRedisStream),
+		gCtrl:               gCtrl,
+		dzcCtrl:             dzcCtrl,
+		redisClient:         redisClient,
+		redisChannelGeoloc:  os.Getenv(defines.EnvRedisChannelGeoloc),
+		redisChannelNewZone: os.Getenv(defines.EnvRedisChannelCreateDangerZone),
 	}
 }
 
 func (j *job) Run() {
-	log.Printf("Listening stream %s\n", j.redisStream)
+	log.Printf("Listening channel %s\n", j.redisChannelNewZone)
+
+	// Check new zones to be created
 	for {
 		ctx := context.Background()
-		res, err := j.redisClient.XRead(ctx, &redis.XReadArgs{
-			Streams: []string{j.redisStream, "$"},
-			Block:   0,
-		}).Result()
-
+		res, err := j.redisClient.Subscribe(ctx, j.redisChannelNewZone).ReceiveMessage(ctx)
 		if err != nil {
 			log.Println(err)
 			continue
 		}
 
-		if res == nil || len(res) != 1 {
-			log.Printf("Invalid format: %+v\n", res)
+		var body domain.DangerZone
+
+		err = json.Unmarshal([]byte(res.Payload), &body)
+		if err != nil {
+			log.Println(err)
 			continue
 		}
 
-		for _, m := range res[0].Messages {
-			go func(m redis.XMessage) {
-				err := j.geolocCtrl.Process(&m)
-
-				if err != nil {
-					log.Printf("Error: %+v\n", err)
-				}
-			}(m)
+		// Check if zone already cached
+		dz, err := j.dzcCtrl.GetByDeviceID(body.DeviceID)
+		if err != nil {
+			log.Println(err)
+			continue
+		}
+		if dz != nil {
+			continue
 		}
 
+		// Store zone in cache
+		err = j.dzcCtrl.Create(&body)
+		if err != nil {
+			log.Println(err)
+			continue
+		}
+
+		// Create go routine
+		go j.createConsumerForDevice(body.DeviceID)
 	}
 }
 
@@ -88,4 +107,22 @@ func initRedisClient() *redis.Client {
 	}
 
 	return redisClient
+}
+func (j *job) createConsumerForDevice(deviceID string) {
+	log.Printf("Created routine for deviceID: %s\n", deviceID)
+	for {
+		ctx := context.Background()
+		res, err := j.redisClient.
+			Subscribe(ctx, fmt.Sprintf("%s:%s", j.redisChannelGeoloc, deviceID)).
+			ReceiveMessage(ctx)
+		if err != nil {
+			log.Printf("Error subscribing: %+v\n", err)
+			continue
+		}
+
+		err = j.gCtrl.Process(deviceID, res.Payload)
+		if err != nil {
+			log.Printf("Error processing: %+v\n", err)
+		}
+	}
 }

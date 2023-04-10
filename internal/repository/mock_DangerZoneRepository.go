@@ -13,17 +13,17 @@ type MockDangerZoneRepository struct {
 	mock.Mock
 }
 
-// GetByUserID provides a mock function with given fields: userID
-func (_m *MockDangerZoneRepository) GetByUserID(userID string) (*domain.DangerZone, error) {
-	ret := _m.Called(userID)
+// GetBydeviceID provides a mock function with given fields: deviceID
+func (_m *MockDangerZoneRepository) GetByDeviceID(deviceID string) (*domain.DangerZone, error) {
+	ret := _m.Called(deviceID)
 
 	var r0 *domain.DangerZone
 	var r1 error
 	if rf, ok := ret.Get(0).(func(string) (*domain.DangerZone, error)); ok {
-		return rf(userID)
+		return rf(deviceID)
 	}
 	if rf, ok := ret.Get(0).(func(string) *domain.DangerZone); ok {
-		r0 = rf(userID)
+		r0 = rf(deviceID)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).(*domain.DangerZone)
@@ -31,7 +31,7 @@ func (_m *MockDangerZoneRepository) GetByUserID(userID string) (*domain.DangerZo
 	}
 
 	if rf, ok := ret.Get(1).(func(string) error); ok {
-		r1 = rf(userID)
+		r1 = rf(deviceID)
 	} else {
 		r1 = ret.Error(1)
 	}

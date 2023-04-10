@@ -9,23 +9,23 @@ import (
 )
 
 type ZoneService interface {
-	Verify(userID string, p *domain.Payload) error
+	Verify(deviceID string, p *domain.Payload) error
 }
 
 type zoneService struct {
-	dzRepo    repository.DangerZoneRepository
+	dzcRepo   repository.DangerZoneCacheRepository
 	alarmRepo repository.AlarmRepository
 }
 
-func NewZoneService(dzRepo repository.DangerZoneRepository, alarmRepo repository.AlarmRepository) ZoneService {
+func NewZoneService(dzcRepo repository.DangerZoneCacheRepository, alarmRepo repository.AlarmRepository) ZoneService {
 	return &zoneService{
-		dzRepo:    dzRepo,
+		dzcRepo:   dzcRepo,
 		alarmRepo: alarmRepo,
 	}
 }
 
-func (svc *zoneService) Verify(userID string, p *domain.Payload) error {
-	dz, err := svc.dzRepo.GetByUserID(userID)
+func (svc *zoneService) Verify(deviceID string, p *domain.Payload) error {
+	dz, err := svc.dzcRepo.GetByDeviceID(deviceID)
 	if err != nil {
 		return err
 	}
@@ -33,16 +33,15 @@ func (svc *zoneService) Verify(userID string, p *domain.Payload) error {
 		return nil
 	}
 
-	log.Printf("zone-> lat:%f\tlon:%f\n", dz.CenterLatitude, dz.CenterLongitude)
-	log.Printf("user-> lat:%f\tlon:%f\n", p.Latitude, p.Longitude)
+	log.Printf("zone-> lat:%f\tlon:%f\n", dz.Latitude, dz.Longitude)
+	log.Printf("device-> lat:%f\tlon:%f\n", p.Latitude, p.Longitude)
 
-	// Pythagorean Theorem: c = sqrt(a^2 + b^2)
-	distance := math.Sqrt(math.Pow(p.Latitude-dz.CenterLatitude, 2) + math.Pow(p.Longitude-dz.CenterLongitude, 2))
+	distance := math.Sqrt(math.Pow(p.Latitude-dz.Latitude, 2) + math.Pow(p.Longitude-dz.Longitude, 2))
 
 	if distance >= dz.Radius && p.Timestamp <= dz.EndTimestamp { // Goes out before time
-		err = svc.alarmRepo.Send(userID, defines.AlarmMessageOutsideZoneBeforeTime)
+		err = svc.alarmRepo.Send(deviceID, defines.AlarmMessageOutsideZoneBeforeTime)
 	} else if distance <= dz.Radius && p.Timestamp >= dz.EndTimestamp { // Inside after time
-		err = svc.alarmRepo.Send(userID, defines.AlarmMessageInsideZoneAfterTime)
+		err = svc.alarmRepo.Send(deviceID, defines.AlarmMessageInsideZoneAfterTime)
 	}
 	if err != nil {
 		return err

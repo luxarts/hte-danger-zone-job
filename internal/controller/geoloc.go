@@ -2,14 +2,13 @@ package controller
 
 import (
 	"encoding/json"
-	"github.com/redis/go-redis/v9"
 	"hte-danger-zone-job/internal/domain"
 	"hte-danger-zone-job/internal/service"
 	"log"
 )
 
 type GeolocController interface {
-	Process(body *redis.XMessage) error
+	Process(deviceID string, body string) error
 }
 
 type geolocController struct {
@@ -20,26 +19,17 @@ func NewGeolocController(zoneSvc service.ZoneService) GeolocController {
 	return &geolocController{zoneSvc: zoneSvc}
 }
 
-func (ctrl *geolocController) Process(body *redis.XMessage) error {
-	streamID := body.ID
-	var userID string
+func (ctrl *geolocController) Process(deviceID string, body string) error {
 	var p domain.Payload
-	for k, v := range body.Values {
-		userID = k
-		err := json.Unmarshal([]byte(v.(string)), &p)
-		if err != nil {
-			return err
-		}
+
+	err := json.Unmarshal([]byte(body), &p)
+	if err != nil {
+		return err
 	}
 
-	log.Printf("-----------\n"+
-		"Stream ID: %s\n"+
-		"User ID: %s\n"+
-		"Payload: %+v\n"+
-		"-----------\n",
-		streamID, userID, p)
+	log.Printf("Device ID: %s\tPayload: %+v\n", deviceID, p)
 
-	err := ctrl.zoneSvc.Verify(userID, &p)
+	err = ctrl.zoneSvc.Verify(deviceID, &p)
 	if err != nil {
 		return err
 	}
