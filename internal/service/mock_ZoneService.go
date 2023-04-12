@@ -13,13 +13,13 @@ type MockZoneService struct {
 	mock.Mock
 }
 
-// Verify provides a mock function with given fields: userID, p
-func (_m *MockZoneService) Verify(userID string, p *domain.Payload) error {
-	ret := _m.Called(userID, p)
+// Verify provides a mock function with given fields: deviceID, p
+func (_m *MockZoneService) Verify(deviceID string, p *domain.Payload) error {
+	ret := _m.Called(deviceID, p)
 
 	var r0 error
 	if rf, ok := ret.Get(0).(func(string, *domain.Payload) error); ok {
-		r0 = rf(userID, p)
+		r0 = rf(deviceID, p)
 	} else {
 		r0 = ret.Error(0)
 	}
