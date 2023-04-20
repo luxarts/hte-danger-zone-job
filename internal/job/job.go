@@ -80,8 +80,6 @@ func (j *job) recreateActiveZonesJob() {
 		return
 	}
 	for _, dz := range *dangerZones {
-		ctx := context.Background()
-
 		// Store zone in cache
 		err = j.dzcCtrl.Create(&dz)
 		if err != nil {
@@ -89,11 +87,7 @@ func (j *job) recreateActiveZonesJob() {
 			continue
 		}
 
-		// Create go routine
-		j.cancelMapMutex.Lock()
-		ctx, j.cancelMap[dz.DeviceID] = context.WithCancel(ctx)
-		j.cancelMapMutex.Unlock()
-		go j.createConsumerForDevice(ctx, dz.DeviceID)
+		go j.createConsumerForDevice(dz.DeviceID)
 	}
 }
 func (j *job) createZoneJob() {
@@ -114,13 +108,12 @@ func (j *job) createZoneJob() {
 			continue
 		}
 
-		// Check if zone already cached
-		dz, err := j.dzcCtrl.GetByDeviceID(body.DeviceID)
-		if err != nil {
-			log.Println(err)
-			continue
-		}
-		if dz != nil {
+		// Check if zone consumer already exists
+		j.cancelMapMutex.Lock()
+		_, exists := j.cancelMap[body.DeviceID]
+		j.cancelMapMutex.Unlock()
+		if exists {
+			log.Println("Go routine already exists for this device")
 			continue
 		}
 
@@ -131,11 +124,7 @@ func (j *job) createZoneJob() {
 			continue
 		}
 
-		// Create go routine
-		j.cancelMapMutex.Lock()
-		ctx, j.cancelMap[body.DeviceID] = context.WithCancel(ctx)
-		j.cancelMapMutex.Unlock()
-		go j.createConsumerForDevice(ctx, body.DeviceID)
+		go j.createConsumerForDevice(body.DeviceID)
 	}
 }
 func (j *job) deleteZoneJob() {
@@ -177,8 +166,14 @@ func initRedisClient() *redis.Client {
 
 	return redisClient
 }
-func (j *job) createConsumerForDevice(ctx context.Context, deviceID string) {
+func (j *job) createConsumerForDevice(deviceID string) {
 	log.Printf("Created routine for deviceID: %s\n", deviceID)
+
+	var ctx context.Context
+	j.cancelMapMutex.Lock()
+	ctx, j.cancelMap[deviceID] = context.WithCancel(context.Background())
+	j.cancelMapMutex.Unlock()
+
 	for {
 		res, err := j.redisClient.
 			Subscribe(ctx, fmt.Sprintf("%s:%s", j.redisChannelGeoloc, deviceID)).
@@ -195,12 +190,14 @@ func (j *job) createConsumerForDevice(ctx context.Context, deviceID string) {
 
 		select {
 		case <-ctx.Done():
+			log.Printf("Go routine for deviceID %s deleted\n", deviceID)
 			return
 		default:
 		}
 	}
 }
 func (j *job) deleteConsumerForDevice(id string, cancelMap map[string]context.CancelFunc) {
+	log.Printf("Deleting routine for deviceID: %s\n", id)
 	j.cancelMapMutex.Lock()
 	cancelMap[id]()
 	delete(cancelMap, id)
