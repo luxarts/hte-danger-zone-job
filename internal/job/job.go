@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/go-resty/resty/v2"
 	"github.com/redis/go-redis/v9"
 	"hte-danger-zone-job/internal/controller"
 	"hte-danger-zone-job/internal/defines"
@@ -26,6 +27,7 @@ type job struct {
 	redisChannelDeleteZone string
 	gCtrl                  controller.GeolocController
 	dzcCtrl                controller.DangerZoneCacheController
+	dzCtrl                 controller.DangerZoneController
 	cancelMap              map[string]context.CancelFunc
 	cancelMapMutex         sync.Mutex
 }
@@ -33,22 +35,27 @@ type job struct {
 func New() Job {
 	// Redis Client
 	redisClient := initRedisClient()
+	restClient := resty.New()
 
 	// Repository
 	alarmRepo := repository.NewAlarmRepository()
 	dzcRepo := repository.NewDangerZoneCacheRepository(redisClient, os.Getenv(defines.EnvRedisKeyDangerZone))
+	dzRepo := repository.NewDangerZoneRepository(restClient, os.Getenv(defines.EnvAPIDangerZoneHost))
 
 	// Service
 	zoneSvc := service.NewZoneService(dzcRepo, alarmRepo)
 	dzcSvc := service.NewDangerZoneCacheService(dzcRepo)
+	dzSvc := service.NewDangerZoneService(dzRepo)
 
 	// Controller
 	gCtrl := controller.NewGeolocController(zoneSvc)
 	dzcCtrl := controller.NewDangerZoneCacheController(dzcSvc)
+	dzCtrl := controller.NewDangerZoneController(dzSvc)
 
 	return &job{
 		gCtrl:                  gCtrl,
 		dzcCtrl:                dzcCtrl,
+		dzCtrl:                 dzCtrl,
 		redisClient:            redisClient,
 		redisChannelGeoloc:     os.Getenv(defines.EnvRedisChannelGeoloc),
 		redisChannelNewZone:    os.Getenv(defines.EnvRedisChannelCreateDangerZone),
@@ -58,12 +65,37 @@ func New() Job {
 }
 
 func (j *job) Run() {
+	go j.recreateActiveZonesJob()
 	go j.createZoneJob()
 	go j.deleteZoneJob()
 
 	select {}
 }
 
+func (j *job) recreateActiveZonesJob() {
+	log.Printf("Recreating active zones\n")
+	dangerZones, err := j.dzCtrl.GetAllActive()
+	if err != nil {
+		log.Printf("Failed GetAllActive: %+v\n", err)
+		return
+	}
+	for _, dz := range *dangerZones {
+		ctx := context.Background()
+
+		// Store zone in cache
+		err = j.dzcCtrl.Create(&dz)
+		if err != nil {
+			log.Println(err)
+			continue
+		}
+
+		// Create go routine
+		j.cancelMapMutex.Lock()
+		ctx, j.cancelMap[dz.DeviceID] = context.WithCancel(ctx)
+		j.cancelMapMutex.Unlock()
+		go j.createConsumerForDevice(ctx, dz.DeviceID)
+	}
+}
 func (j *job) createZoneJob() {
 	log.Printf("Listening channel %s\n", j.redisChannelNewZone)
 	for {
