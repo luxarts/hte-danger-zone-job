@@ -4,7 +4,6 @@ import (
 	"hte-danger-zone-job/internal/defines"
 	"hte-danger-zone-job/internal/domain"
 	"hte-danger-zone-job/internal/repository"
-	"log"
 	"math"
 )
 
@@ -32,9 +31,6 @@ func (svc *zoneService) Verify(deviceID string, p *domain.Payload) error {
 	if dz == nil {
 		return nil
 	}
-
-	log.Printf("zone-> lat:%f\tlon:%f\n", dz.Latitude, dz.Longitude)
-	log.Printf("device-> lat:%f\tlon:%f\n", p.Latitude, p.Longitude)
 
 	distance := math.Sqrt(math.Pow(p.Latitude-dz.Latitude, 2) + math.Pow(p.Longitude-dz.Longitude, 2))
 
