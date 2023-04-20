@@ -1,9 +1,9 @@
 package domain
 
 type DangerZone struct {
-	DeviceID     string  `json:"did"`
-	Latitude     float64 `json:"lat"`
-	Longitude    float64 `json:"lon"`
-	Radius       float64 `json:"r"`
-	EndTimestamp int64   `json:"e_ts"`
+	DeviceID     string  `json:"device_id"`
+	Latitude     float64 `json:"latitude"`
+	Longitude    float64 `json:"longitude"`
+	Radius       float64 `json:"radius"`
+	EndTimestamp int64   `json:"end_timestamp"`
 }

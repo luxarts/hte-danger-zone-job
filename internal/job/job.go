@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/go-resty/resty/v2"
 	"github.com/redis/go-redis/v9"
 	"hte-danger-zone-job/internal/controller"
 	"hte-danger-zone-job/internal/defines"
@@ -26,6 +27,7 @@ type job struct {
 	redisChannelDeleteZone string
 	gCtrl                  controller.GeolocController
 	dzcCtrl                controller.DangerZoneCacheController
+	dzCtrl                 controller.DangerZoneController
 	cancelMap              map[string]context.CancelFunc
 	cancelMapMutex         sync.Mutex
 }
@@ -33,22 +35,27 @@ type job struct {
 func New() Job {
 	// Redis Client
 	redisClient := initRedisClient()
+	restClient := resty.New()
 
 	// Repository
 	alarmRepo := repository.NewAlarmRepository()
 	dzcRepo := repository.NewDangerZoneCacheRepository(redisClient, os.Getenv(defines.EnvRedisKeyDangerZone))
+	dzRepo := repository.NewDangerZoneRepository(restClient, os.Getenv(defines.EnvAPIDangerZoneHost))
 
 	// Service
 	zoneSvc := service.NewZoneService(dzcRepo, alarmRepo)
 	dzcSvc := service.NewDangerZoneCacheService(dzcRepo)
+	dzSvc := service.NewDangerZoneService(dzRepo)
 
 	// Controller
 	gCtrl := controller.NewGeolocController(zoneSvc)
 	dzcCtrl := controller.NewDangerZoneCacheController(dzcSvc)
+	dzCtrl := controller.NewDangerZoneController(dzSvc)
 
 	return &job{
 		gCtrl:                  gCtrl,
 		dzcCtrl:                dzcCtrl,
+		dzCtrl:                 dzCtrl,
 		redisClient:            redisClient,
 		redisChannelGeoloc:     os.Getenv(defines.EnvRedisChannelGeoloc),
 		redisChannelNewZone:    os.Getenv(defines.EnvRedisChannelCreateDangerZone),
@@ -58,12 +65,31 @@ func New() Job {
 }
 
 func (j *job) Run() {
+	go j.recreateActiveZonesJob()
 	go j.createZoneJob()
 	go j.deleteZoneJob()
 
 	select {}
 }
 
+func (j *job) recreateActiveZonesJob() {
+	log.Printf("Recreating active zones\n")
+	dangerZones, err := j.dzCtrl.GetAllActive()
+	if err != nil {
+		log.Printf("Failed GetAllActive: %+v\n", err)
+		return
+	}
+	for _, dz := range *dangerZones {
+		// Store zone in cache
+		err = j.dzcCtrl.Create(&dz)
+		if err != nil {
+			log.Println(err)
+			continue
+		}
+
+		go j.createConsumerForDevice(dz.DeviceID)
+	}
+}
 func (j *job) createZoneJob() {
 	log.Printf("Listening channel %s\n", j.redisChannelNewZone)
 	for {
@@ -82,13 +108,12 @@ func (j *job) createZoneJob() {
 			continue
 		}
 
-		// Check if zone already cached
-		dz, err := j.dzcCtrl.GetByDeviceID(body.DeviceID)
-		if err != nil {
-			log.Println(err)
-			continue
-		}
-		if dz != nil {
+		// Check if zone consumer already exists
+		j.cancelMapMutex.Lock()
+		_, exists := j.cancelMap[body.DeviceID]
+		j.cancelMapMutex.Unlock()
+		if exists {
+			log.Println("Go routine already exists for this device")
 			continue
 		}
 
@@ -99,11 +124,7 @@ func (j *job) createZoneJob() {
 			continue
 		}
 
-		// Create go routine
-		j.cancelMapMutex.Lock()
-		ctx, j.cancelMap[body.DeviceID] = context.WithCancel(ctx)
-		j.cancelMapMutex.Unlock()
-		go j.createConsumerForDevice(ctx, body.DeviceID)
+		go j.createConsumerForDevice(body.DeviceID)
 	}
 }
 func (j *job) deleteZoneJob() {
@@ -145,32 +166,48 @@ func initRedisClient() *redis.Client {
 
 	return redisClient
 }
-func (j *job) createConsumerForDevice(ctx context.Context, deviceID string) {
+func (j *job) createConsumerForDevice(deviceID string) {
 	log.Printf("Created routine for deviceID: %s\n", deviceID)
+
+	var ctx context.Context
+	j.cancelMapMutex.Lock()
+	ctx, j.cancelMap[deviceID] = context.WithCancel(context.Background())
+	j.cancelMapMutex.Unlock()
+
+	msgChan := make(chan *redis.Message)
+
+	ps := j.redisClient.Subscribe(ctx, fmt.Sprintf("%s:%s", j.redisChannelGeoloc, deviceID))
+
+	go func() {
+		for msg := range ps.Channel() {
+			msgChan <- msg
+		}
+	}()
+
 	for {
-		res, err := j.redisClient.
-			Subscribe(ctx, fmt.Sprintf("%s:%s", j.redisChannelGeoloc, deviceID)).
-			ReceiveMessage(ctx)
-		if err != nil {
-			log.Printf("Error subscribing: %+v\n", err)
-			continue
-		}
-
-		err = j.gCtrl.Process(deviceID, res.Payload)
-		if err != nil {
-			log.Printf("Error processing: %+v\n", err)
-		}
-
 		select {
+		case res := <-msgChan:
+			err := j.gCtrl.Process(deviceID, res.Payload)
+			if err != nil {
+				log.Printf("Error processing: %+v\n", err)
+			}
 		case <-ctx.Done():
+			err := ps.Close()
+			if err != nil {
+				log.Printf("Error closing PubSub: %+v\n", err)
+			}
+			log.Printf("Deleted routine for deviceID: %s\n", deviceID)
 			return
-		default:
 		}
 	}
 }
 func (j *job) deleteConsumerForDevice(id string, cancelMap map[string]context.CancelFunc) {
 	j.cancelMapMutex.Lock()
-	cancelMap[id]()
+	defer j.cancelMapMutex.Unlock()
+	cancel, exist := cancelMap[id]
+	if !exist {
+		return
+	}
+	cancel()
 	delete(cancelMap, id)
-	j.cancelMapMutex.Unlock()
 }
