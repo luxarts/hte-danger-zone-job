@@ -174,32 +174,40 @@ func (j *job) createConsumerForDevice(deviceID string) {
 	ctx, j.cancelMap[deviceID] = context.WithCancel(context.Background())
 	j.cancelMapMutex.Unlock()
 
+	msgChan := make(chan *redis.Message)
+
+	ps := j.redisClient.Subscribe(ctx, fmt.Sprintf("%s:%s", j.redisChannelGeoloc, deviceID))
+
+	go func() {
+		for msg := range ps.Channel() {
+			msgChan <- msg
+		}
+	}()
+
 	for {
-		res, err := j.redisClient.
-			Subscribe(ctx, fmt.Sprintf("%s:%s", j.redisChannelGeoloc, deviceID)).
-			ReceiveMessage(ctx)
-		if err != nil {
-			log.Printf("Error subscribing: %+v\n", err)
-			continue
-		}
-
-		err = j.gCtrl.Process(deviceID, res.Payload)
-		if err != nil {
-			log.Printf("Error processing: %+v\n", err)
-		}
-
 		select {
+		case res := <-msgChan:
+			err := j.gCtrl.Process(deviceID, res.Payload)
+			if err != nil {
+				log.Printf("Error processing: %+v\n", err)
+			}
 		case <-ctx.Done():
-			log.Printf("Go routine for deviceID %s deleted\n", deviceID)
+			err := ps.Close()
+			if err != nil {
+				log.Printf("Error closing PubSub: %+v\n", err)
+			}
+			log.Printf("Deleted routine for deviceID: %s\n", deviceID)
 			return
-		default:
 		}
 	}
 }
 func (j *job) deleteConsumerForDevice(id string, cancelMap map[string]context.CancelFunc) {
-	log.Printf("Deleting routine for deviceID: %s\n", id)
 	j.cancelMapMutex.Lock()
-	cancelMap[id]()
+	defer j.cancelMapMutex.Unlock()
+	cancel, exist := cancelMap[id]
+	if !exist {
+		return
+	}
+	cancel()
 	delete(cancelMap, id)
-	j.cancelMapMutex.Unlock()
 }
