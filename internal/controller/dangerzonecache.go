@@ -8,6 +8,7 @@ import (
 type DangerZoneCacheController interface {
 	Create(body *domain.DangerZone) error
 	GetByDeviceID(deviceID string) (*domain.DangerZone, error)
+	DeleteByDeviceID(deviceID string) error
 }
 type dangerZoneCacheController struct {
 	dzcSvc service.DangerZoneCacheService
@@ -22,4 +23,7 @@ func (ctrl *dangerZoneCacheController) Create(body *domain.DangerZone) error {
 }
 func (ctrl *dangerZoneCacheController) GetByDeviceID(deviceID string) (*domain.DangerZone, error) {
 	return ctrl.dzcSvc.GetByDeviceID(deviceID)
+}
+func (ctrl *dangerZoneCacheController) DeleteByDeviceID(deviceID string) error {
+	return ctrl.dzcSvc.DeleteByDeviceID(deviceID)
 }

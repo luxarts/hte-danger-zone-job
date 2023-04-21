@@ -8,7 +8,7 @@ import (
 )
 
 type GeolocController interface {
-	Process(deviceID string, body string) error
+	Process(deviceID string, body string) (bool, error)
 }
 
 type geolocController struct {
@@ -19,20 +19,15 @@ func NewGeolocController(zoneSvc service.ZoneService) GeolocController {
 	return &geolocController{zoneSvc: zoneSvc}
 }
 
-func (ctrl *geolocController) Process(deviceID string, body string) error {
+func (ctrl *geolocController) Process(deviceID string, body string) (bool, error) {
 	var p domain.Payload
 
 	err := json.Unmarshal([]byte(body), &p)
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	log.Printf("Device ID: %s\tPayload: %+v\n", deviceID, p)
 
-	err = ctrl.zoneSvc.Verify(deviceID, &p)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return ctrl.zoneSvc.Verify(deviceID, &p)
 }
