@@ -12,6 +12,9 @@
      -e REDIS_PASSWORD='' \
      -e REDIS_CHANNEL_GEOLOC='c-geoloc' \
      -e REDIS_CHANNEL_CREATE_ZONE='c-dangerzone:create' \
+     -e REDIS_CHANNEL_DELETE_ZONE='c-dangerzone:delete' \
+     -e REDIS_KEY_DANGER_ZONE='k-dangerzone' \
+     -e REDIS_QUEUE_ALARMS='q-alarms' \
      --network hte \
      danger-zone-job
    ```
