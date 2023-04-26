@@ -12,6 +12,7 @@ import (
 type DangerZoneCacheRepository interface {
 	Create(z *domain.DangerZone) error
 	GetByDeviceID(deviceID string) (*domain.DangerZone, error)
+	DeleteByDeviceID(deviceID string) error
 }
 
 type dangerZoneCacheRepository struct {
@@ -53,4 +54,11 @@ func (repo *dangerZoneCacheRepository) GetByDeviceID(deviceID string) (*domain.D
 	}
 
 	return &dangerZone, nil
+}
+func (repo *dangerZoneCacheRepository) DeleteByDeviceID(deviceID string) error {
+	ctx := context.Background()
+	err := repo.rc.
+		Del(ctx, fmt.Sprintf("%s:%s", defines.DangerZoneKey, deviceID)).
+		Err()
+	return err
 }

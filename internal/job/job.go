@@ -38,7 +38,7 @@ func New() Job {
 	restClient := resty.New()
 
 	// Repository
-	alarmRepo := repository.NewAlarmRepository()
+	alarmRepo := repository.NewAlarmRepository(redisClient, os.Getenv(defines.EnvRedisQueueAlarms))
 	dzcRepo := repository.NewDangerZoneCacheRepository(redisClient, os.Getenv(defines.EnvRedisKeyDangerZone))
 	dzRepo := repository.NewDangerZoneRepository(restClient, os.Getenv(defines.EnvAPIDangerZoneHost))
 
@@ -76,8 +76,7 @@ func (j *job) recreateActiveZonesJob() {
 	log.Printf("Recreating active zones\n")
 	dangerZones, err := j.dzCtrl.GetAllActive()
 	if err != nil {
-		log.Printf("Failed GetAllActive: %+v\n", err)
-		return
+		log.Panicf("Failed GetAllActive: %+v\n", err)
 	}
 	for _, dz := range *dangerZones {
 		// Store zone in cache
@@ -147,7 +146,7 @@ func (j *job) deleteZoneJob() {
 		}
 
 		// Create go routine
-		go j.deleteConsumerForDevice(dz.DeviceID, j.cancelMap)
+		go j.deleteConsumerForDevice(dz.DeviceID)
 	}
 }
 
@@ -187,9 +186,16 @@ func (j *job) createConsumerForDevice(deviceID string) {
 	for {
 		select {
 		case res := <-msgChan:
-			err := j.gCtrl.Process(deviceID, res.Payload)
+			exit, err := j.gCtrl.Process(deviceID, res.Payload)
 			if err != nil {
 				log.Printf("Error processing: %+v\n", err)
+			}
+			if exit {
+				err = j.dzCtrl.DeleteByDeviceID(deviceID)
+				if err != nil {
+					log.Printf("Error deleting from ms: %+v\n", err)
+				}
+				j.deleteConsumerForDevice(deviceID)
 			}
 		case <-ctx.Done():
 			err := ps.Close()
@@ -201,13 +207,19 @@ func (j *job) createConsumerForDevice(deviceID string) {
 		}
 	}
 }
-func (j *job) deleteConsumerForDevice(id string, cancelMap map[string]context.CancelFunc) {
+func (j *job) deleteConsumerForDevice(id string) {
 	j.cancelMapMutex.Lock()
 	defer j.cancelMapMutex.Unlock()
-	cancel, exist := cancelMap[id]
+	cancel, exist := j.cancelMap[id]
 	if !exist {
 		return
 	}
 	cancel()
-	delete(cancelMap, id)
+	delete(j.cancelMap, id)
+
+	err := j.dzcCtrl.DeleteByDeviceID(id)
+	if err != nil {
+		log.Printf("Error deleting from cache: %+v\n", err)
+	}
+
 }

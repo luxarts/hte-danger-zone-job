@@ -7,6 +7,7 @@ import (
 
 type DangerZoneService interface {
 	GetAllActive() (*[]domain.DangerZone, error)
+	DeleteByDeviceID(deviceID string) error
 }
 
 type dangerZoneService struct {
@@ -18,4 +19,7 @@ func NewDangerZoneService(repo repository.DangerZoneRepository) DangerZoneServic
 }
 func (svc *dangerZoneService) GetAllActive() (*[]domain.DangerZone, error) {
 	return svc.repo.GetAllActive()
+}
+func (svc *dangerZoneService) DeleteByDeviceID(deviceID string) error {
+	return svc.repo.DeleteByDeviceID(deviceID)
 }
