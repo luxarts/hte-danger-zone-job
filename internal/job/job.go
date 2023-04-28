@@ -14,6 +14,7 @@ import (
 	"log"
 	"os"
 	"sync"
+	"time"
 )
 
 type Job interface {
@@ -85,8 +86,8 @@ func (j *job) recreateActiveZonesJob() {
 			log.Println(err)
 			continue
 		}
-
-		go j.createConsumerForDevice(dz.DeviceID)
+		ts := time.Unix(dz.EndTimestamp, 0)
+		go j.createConsumerForDevice(dz.DeviceID, ts)
 	}
 }
 func (j *job) createZoneJob() {
@@ -106,6 +107,7 @@ func (j *job) createZoneJob() {
 			log.Println(err)
 			continue
 		}
+		ts := time.Unix(body.EndTimestamp, 0)
 
 		// Check if zone consumer already exists
 		j.cancelMapMutex.Lock()
@@ -123,7 +125,7 @@ func (j *job) createZoneJob() {
 			continue
 		}
 
-		go j.createConsumerForDevice(body.DeviceID)
+		go j.createConsumerForDevice(body.DeviceID, ts)
 	}
 }
 func (j *job) deleteZoneJob() {
@@ -165,12 +167,13 @@ func initRedisClient() *redis.Client {
 
 	return redisClient
 }
-func (j *job) createConsumerForDevice(deviceID string) {
+func (j *job) createConsumerForDevice(deviceID string, ts time.Time) {
 	log.Printf("Created routine for deviceID: %s\n", deviceID)
 
 	var ctx context.Context
 	j.cancelMapMutex.Lock()
-	ctx, j.cancelMap[deviceID] = context.WithCancel(context.Background())
+	ctx, j.cancelMap[deviceID] = context.WithDeadline(context.Background(), ts)
+
 	j.cancelMapMutex.Unlock()
 
 	msgChan := make(chan *redis.Message)
@@ -198,12 +201,21 @@ func (j *job) createConsumerForDevice(deviceID string) {
 				j.deleteConsumerForDevice(deviceID)
 			}
 		case <-ctx.Done():
+			if ctx.Err() == context.DeadlineExceeded {
+				//Llamar func que manda alarm
+				log.Printf("Se termino mandando alarma")
+				err := j.dzCtrl.DeleteByDeviceID(deviceID)
+				if err != nil {
+					log.Printf("Error deleting from ms: %+v\n", err)
+				}
+			}
 			err := ps.Close()
 			if err != nil {
 				log.Printf("Error closing PubSub: %+v\n", err)
 			}
 			log.Printf("Deleted routine for deviceID: %s\n", deviceID)
 			return
+
 		}
 	}
 }

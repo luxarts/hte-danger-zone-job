@@ -34,11 +34,8 @@ func (svc *zoneService) Verify(deviceID string, p *domain.Payload) (bool, error)
 
 	distance := math.Sqrt(math.Pow(p.Latitude-dz.Latitude, 2) + math.Pow(p.Longitude-dz.Longitude, 2))
 	var exit bool
-	if distance >= dz.Radius && p.Timestamp <= dz.EndTimestamp { // Goes out before time
+	if distance >= dz.Radius { // Goes out before time
 		err = svc.alarmRepo.Send(deviceID, "", defines.AlarmMessageOutsideZoneBeforeTime)
-		exit = true
-	} else if distance <= dz.Radius && p.Timestamp >= dz.EndTimestamp { // Inside after time
-		err = svc.alarmRepo.Send(deviceID, "", defines.AlarmMessageInsideZoneAfterTime)
 		exit = true
 	}
 
@@ -48,3 +45,5 @@ func (svc *zoneService) Verify(deviceID string, p *domain.Payload) (bool, error)
 
 	return exit, nil
 }
+
+//una funcion para llamar al repo
