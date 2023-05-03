@@ -173,7 +173,6 @@ func (j *job) createConsumerForDevice(deviceID string, ts time.Time) {
 	var ctx context.Context
 	j.cancelMapMutex.Lock()
 	ctx, j.cancelMap[deviceID] = context.WithDeadline(context.Background(), ts)
-
 	j.cancelMapMutex.Unlock()
 
 	msgChan := make(chan *redis.Message)
@@ -215,7 +214,6 @@ func (j *job) createConsumerForDevice(deviceID string, ts time.Time) {
 			}
 			log.Printf("Deleted routine for deviceID: %s\n", deviceID)
 			return
-
 		}
 	}
 }

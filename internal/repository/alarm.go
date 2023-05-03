@@ -26,20 +26,20 @@ func NewAlarmRepository(rc *redis.Client, alarmsQueue string) AlarmRepository {
 }
 
 func (repo *alarmRepository) Send(deviceID string, companyID string, message string) error {
-	log.Printf("%s->%s\n", deviceID, message)
+	log.Printf("Sending alarm: %s->%s\n", deviceID, message)
 
 	ctx := context.Background()
 
 	alarm := domain.Alarm{
 		AssetID:   deviceID,
-		Type:      "dangerzone",
+		Type:      "panic",
 		Action:    "create",
 		Timestamp: time.Now().Unix(),
 		CompanyID: companyID,
-		Position:  nil,
+		Position:  domain.AlarmPosition{},
 		Text:      message,
 		CountryID: 0,
-		Device:    "",
+		Device:    domain.AlarmDevice{},
 	}
 
 	alarmBytes, err := json.Marshal(alarm)
