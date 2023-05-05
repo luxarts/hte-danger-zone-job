@@ -29,6 +29,7 @@ type job struct {
 	gCtrl                  controller.GeolocController
 	dzcCtrl                controller.DangerZoneCacheController
 	dzCtrl                 controller.DangerZoneController
+	alarmCtrl              controller.AlarmController
 	cancelMap              map[string]context.CancelFunc
 	cancelMapMutex         sync.Mutex
 }
@@ -47,16 +48,19 @@ func New() Job {
 	zoneSvc := service.NewZoneService(dzcRepo, alarmRepo)
 	dzcSvc := service.NewDangerZoneCacheService(dzcRepo)
 	dzSvc := service.NewDangerZoneService(dzRepo)
+	alarmSvc := service.NewAlarmService(alarmRepo)
 
 	// Controller
 	gCtrl := controller.NewGeolocController(zoneSvc)
 	dzcCtrl := controller.NewDangerZoneCacheController(dzcSvc)
 	dzCtrl := controller.NewDangerZoneController(dzSvc)
+	alarmCtrl := controller.NewAlarmController(alarmSvc)
 
 	return &job{
 		gCtrl:                  gCtrl,
 		dzcCtrl:                dzcCtrl,
 		dzCtrl:                 dzCtrl,
+		alarmCtrl:              alarmCtrl,
 		redisClient:            redisClient,
 		redisChannelGeoloc:     os.Getenv(defines.EnvRedisChannelGeoloc),
 		redisChannelNewZone:    os.Getenv(defines.EnvRedisChannelCreateDangerZone),
@@ -187,12 +191,12 @@ func (j *job) createConsumerForDevice(deviceID string, ts time.Time) {
 
 	for {
 		select {
-		case res := <-msgChan:
-			exit, err := j.gCtrl.Process(deviceID, res.Payload)
+		case msg := <-msgChan:
+			resp, err := j.gCtrl.Process(deviceID, msg.Payload)
 			if err != nil {
 				log.Printf("Error processing: %+v\n", err)
 			}
-			if exit {
+			if resp != nil {
 				err = j.dzCtrl.DeleteByDeviceID(deviceID)
 				if err != nil {
 					log.Printf("Error deleting from ms: %+v\n", err)
@@ -201,9 +205,16 @@ func (j *job) createConsumerForDevice(deviceID string, ts time.Time) {
 			}
 		case <-ctx.Done():
 			if ctx.Err() == context.DeadlineExceeded {
-				//Llamar func que manda alarm
-				log.Printf("Se termino mandando alarma")
-				err := j.dzCtrl.DeleteByDeviceID(deviceID)
+				err := j.alarmCtrl.Send(&domain.SendAlarmReq{
+					DeviceID: deviceID,
+					Message:  defines.AlarmMessageInsideZoneAfterTime,
+				})
+				if err != nil {
+					log.Printf("Error sending alarm: %+v\n", err)
+					return
+				}
+
+				err = j.dzCtrl.DeleteByDeviceID(deviceID)
 				if err != nil {
 					log.Printf("Error deleting from ms: %+v\n", err)
 				}
@@ -231,5 +242,4 @@ func (j *job) deleteConsumerForDevice(id string) {
 	if err != nil {
 		log.Printf("Error deleting from cache: %+v\n", err)
 	}
-
 }

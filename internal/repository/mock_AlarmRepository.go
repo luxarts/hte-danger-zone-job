@@ -9,13 +9,13 @@ type MockAlarmRepository struct {
 	mock.Mock
 }
 
-// Send provides a mock function with given fields: deviceID, message
-func (_m *MockAlarmRepository) Send(deviceID string, message string) error {
-	ret := _m.Called(deviceID, message)
+// Send provides a mock function with given fields: deviceID, companyID, message, latitude, longitude, countryID
+func (_m *MockAlarmRepository) Send(deviceID string, companyID string, message string, latitude float64, longitude float64, countryID int) error {
+	ret := _m.Called(deviceID, companyID, message, latitude, longitude, countryID)
 
 	var r0 error
-	if rf, ok := ret.Get(0).(func(string, string) error); ok {
-		r0 = rf(deviceID, message)
+	if rf, ok := ret.Get(0).(func(string, string, string, float64, float64, int) error); ok {
+		r0 = rf(deviceID, companyID, message, latitude, longitude, countryID)
 	} else {
 		r0 = ret.Error(0)
 	}

@@ -7,4 +7,5 @@ type DangerZone struct {
 	Longitude    float64 `json:"longitude"`
 	Radius       float64 `json:"radius"`
 	EndTimestamp int64   `json:"end_ts"`
+	CountryID    int     `json:"country_id"`
 }

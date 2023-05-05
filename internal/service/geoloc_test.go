@@ -33,79 +33,18 @@ func TestZoneService_Verify_InsideZoneBeforeTime_NoAlarm_OK(t *testing.T) {
 	svc := NewZoneService(dzcRepo, alarmRepo)
 
 	// When
-	err := svc.Verify(deviceID, p)
+	resp, err := svc.Verify(deviceID, p)
 
 	// Then
 	assert.Nil(t, err)
-	dzcRepo.AssertExpectations(t)
-	alarmRepo.AssertExpectations(t)
-}
-func TestZoneService_Verify_OutsideZoneAfterTime_NoAlarm_OK(t *testing.T) {
-	// Given
-	deviceID := "123"
-	p := &domain.Payload{
-		Timestamp: 11,
-		Latitude:  3.2,
-		Longitude: 1.5,
-	}
-
-	dz := domain.DangerZone{
-		Latitude:     2,
-		Longitude:    0.5,
-		Radius:       1.5,
-		EndTimestamp: 10,
-	}
-
-	dzcRepo := new(repository.MockDangerZoneCacheRepository)
-	dzcRepo.On("GetByDeviceID", deviceID).Return(&dz, nil)
-
-	alarmRepo := new(repository.MockAlarmRepository)
-
-	svc := NewZoneService(dzcRepo, alarmRepo)
-
-	// When
-	err := svc.Verify(deviceID, p)
-
-	// Then
-	assert.Nil(t, err)
-	dzcRepo.AssertExpectations(t)
-	alarmRepo.AssertExpectations(t)
-}
-func TestZoneService_Verify_InsideZoneAfterTime_Alarm_OK(t *testing.T) {
-	// Given
-	deviceID := "123"
-	p := &domain.Payload{
-		Timestamp: 11,
-		Latitude:  3.2,
-		Longitude: 1.3,
-	}
-
-	dz := domain.DangerZone{
-		Latitude:     2,
-		Longitude:    0.5,
-		Radius:       1.5,
-		EndTimestamp: 10,
-	}
-
-	dzcRepo := new(repository.MockDangerZoneCacheRepository)
-	dzcRepo.On("GetByDeviceID", deviceID).Return(&dz, nil)
-
-	alarmRepo := new(repository.MockAlarmRepository)
-	alarmRepo.On("Send", deviceID, defines.AlarmMessageInsideZoneAfterTime).Return(nil)
-
-	svc := NewZoneService(dzcRepo, alarmRepo)
-
-	// When
-	err := svc.Verify(deviceID, p)
-
-	// Then
-	assert.Nil(t, err)
+	assert.Nil(t, resp)
 	dzcRepo.AssertExpectations(t)
 	alarmRepo.AssertExpectations(t)
 }
 func TestZoneService_Verify_OutsideZoneBeforeTime_Alarm_OK(t *testing.T) {
 	// Given
-	deviceID := "123"
+	deviceID := "someDevice"
+
 	p := &domain.Payload{
 		Timestamp: 1,
 		Latitude:  3.2,
@@ -113,29 +52,32 @@ func TestZoneService_Verify_OutsideZoneBeforeTime_Alarm_OK(t *testing.T) {
 	}
 
 	dz := domain.DangerZone{
+		CompanyID:    "someCompany",
 		Latitude:     2,
 		Longitude:    0.5,
 		Radius:       1.5,
 		EndTimestamp: 10,
+		CountryID:    1,
 	}
 
 	dzcRepo := new(repository.MockDangerZoneCacheRepository)
 	dzcRepo.On("GetByDeviceID", deviceID).Return(&dz, nil)
 
 	alarmRepo := new(repository.MockAlarmRepository)
-	alarmRepo.On("Send", deviceID, defines.AlarmMessageOutsideZoneBeforeTime).Return(nil)
+	alarmRepo.On("Send", deviceID, dz.CompanyID, defines.AlarmMessageOutsideZoneBeforeTime, p.Latitude, p.Longitude, dz.CountryID).Return(nil)
 
 	svc := NewZoneService(dzcRepo, alarmRepo)
 
 	// When
-	err := svc.Verify(deviceID, p)
+	resp, err := svc.Verify(deviceID, p)
 
 	// Then
 	assert.Nil(t, err)
+	assert.Equal(t, defines.ResponseStatusOutBeforeTime, *resp)
 	dzcRepo.AssertExpectations(t)
 	alarmRepo.AssertExpectations(t)
 }
-func TestZoneService_Verify_InsideZoneBeforeTime_NoAlarm_ErrorGettingDangerZone(t *testing.T) {
+func TestZoneService_Verify_ErrorGettingDangerZone(t *testing.T) {
 	// Given
 	deviceID := "123"
 	p := &domain.Payload{
@@ -153,14 +95,15 @@ func TestZoneService_Verify_InsideZoneBeforeTime_NoAlarm_ErrorGettingDangerZone(
 	svc := NewZoneService(dzcRepo, alarmRepo)
 
 	// When
-	err := svc.Verify(deviceID, p)
+	resp, err := svc.Verify(deviceID, p)
 
 	// Then
 	assert.Equal(t, dzErr, err)
+	assert.Nil(t, resp)
 	dzcRepo.AssertExpectations(t)
 	alarmRepo.AssertExpectations(t)
 }
-func TestZoneService_Verify_InsideZoneBeforeTime_NoAlarm_NoDangerZone(t *testing.T) {
+func TestZoneService_Verify_NoDangerZone(t *testing.T) {
 	// Given
 	deviceID := "123"
 	p := &domain.Payload{
@@ -177,43 +120,11 @@ func TestZoneService_Verify_InsideZoneBeforeTime_NoAlarm_NoDangerZone(t *testing
 	svc := NewZoneService(dzcRepo, alarmRepo)
 
 	// When
-	err := svc.Verify(deviceID, p)
+	resp, err := svc.Verify(deviceID, p)
 
 	// Then
 	assert.Nil(t, err)
-	dzcRepo.AssertExpectations(t)
-	alarmRepo.AssertExpectations(t)
-}
-func TestZoneService_Verify_InsideZoneAfterTime_Alarm_Error(t *testing.T) {
-	// Given
-	deviceID := "123"
-	p := &domain.Payload{
-		Timestamp: 11,
-		Latitude:  3.2,
-		Longitude: 1.3,
-	}
-
-	dz := domain.DangerZone{
-		Latitude:     2,
-		Longitude:    0.5,
-		Radius:       1.5,
-		EndTimestamp: 10,
-	}
-
-	dzcRepo := new(repository.MockDangerZoneCacheRepository)
-	dzcRepo.On("GetByDeviceID", deviceID).Return(&dz, nil)
-
-	alarmErr := errors.New("error sending alarm")
-	alarmRepo := new(repository.MockAlarmRepository)
-	alarmRepo.On("Send", deviceID, defines.AlarmMessageInsideZoneAfterTime).Return(alarmErr)
-
-	svc := NewZoneService(dzcRepo, alarmRepo)
-
-	// When
-	err := svc.Verify(deviceID, p)
-
-	// Then
-	assert.Equal(t, alarmErr, err)
+	assert.Nil(t, resp)
 	dzcRepo.AssertExpectations(t)
 	alarmRepo.AssertExpectations(t)
 }
@@ -227,10 +138,12 @@ func TestZoneService_Verify_OutsideZoneBeforeTime_Alarm_Error(t *testing.T) {
 	}
 
 	dz := domain.DangerZone{
+		CompanyID:    "someCompany",
 		Latitude:     2,
 		Longitude:    0.5,
 		Radius:       1.5,
 		EndTimestamp: 10,
+		CountryID:    1,
 	}
 
 	dzcRepo := new(repository.MockDangerZoneCacheRepository)
@@ -238,15 +151,16 @@ func TestZoneService_Verify_OutsideZoneBeforeTime_Alarm_Error(t *testing.T) {
 
 	alarmErr := errors.New("error sending alarm")
 	alarmRepo := new(repository.MockAlarmRepository)
-	alarmRepo.On("Send", deviceID, defines.AlarmMessageOutsideZoneBeforeTime).Return(alarmErr)
+	alarmRepo.On("Send", deviceID, dz.CompanyID, defines.AlarmMessageOutsideZoneBeforeTime, p.Latitude, p.Longitude, dz.CountryID).Return(alarmErr)
 
 	svc := NewZoneService(dzcRepo, alarmRepo)
 
 	// When
-	err := svc.Verify(deviceID, p)
+	resp, err := svc.Verify(deviceID, p)
 
 	// Then
 	assert.Equal(t, alarmErr, err)
+	assert.Nil(t, resp)
 	dzcRepo.AssertExpectations(t)
 	alarmRepo.AssertExpectations(t)
 }

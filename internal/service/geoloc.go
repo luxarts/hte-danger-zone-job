@@ -8,7 +8,7 @@ import (
 )
 
 type ZoneService interface {
-	Verify(deviceID string, p *domain.Payload) (bool, error)
+	Verify(deviceID string, p *domain.Payload) (*defines.ResponseStatus, error)
 }
 
 type zoneService struct {
@@ -23,27 +23,25 @@ func NewZoneService(dzcRepo repository.DangerZoneCacheRepository, alarmRepo repo
 	}
 }
 
-func (svc *zoneService) Verify(deviceID string, p *domain.Payload) (bool, error) {
+func (svc *zoneService) Verify(deviceID string, p *domain.Payload) (*defines.ResponseStatus, error) {
 	dz, err := svc.dzcRepo.GetByDeviceID(deviceID)
 	if err != nil {
-		return false, err
+		return nil, err
 	}
 	if dz == nil {
-		return true, nil
+		return nil, nil
 	}
 
 	distance := math.Sqrt(math.Pow(p.Latitude-dz.Latitude, 2) + math.Pow(p.Longitude-dz.Longitude, 2))
-	var exit bool
+
 	if distance >= dz.Radius { // Goes out before time
-		err = svc.alarmRepo.Send(deviceID, "", defines.AlarmMessageOutsideZoneBeforeTime)
-		exit = true
+		err = svc.alarmRepo.Send(deviceID, dz.CompanyID, defines.AlarmMessageOutsideZoneBeforeTime, p.Latitude, p.Longitude, dz.CountryID)
+		if err != nil {
+			return nil, err
+		}
+		resp := defines.ResponseStatusOutBeforeTime
+		return &resp, nil
 	}
 
-	if err != nil {
-		return false, err
-	}
-
-	return exit, nil
+	return nil, nil
 }
-
-//una funcion para llamar al repo

@@ -3,6 +3,7 @@
 package service
 
 import (
+	defines "hte-danger-zone-job/internal/defines"
 	domain "hte-danger-zone-job/internal/domain"
 
 	mock "github.com/stretchr/testify/mock"
@@ -14,17 +15,29 @@ type MockZoneService struct {
 }
 
 // Verify provides a mock function with given fields: deviceID, p
-func (_m *MockZoneService) Verify(deviceID string, p *domain.Payload) error {
+func (_m *MockZoneService) Verify(deviceID string, p *domain.Payload) (*defines.ResponseStatus, error) {
 	ret := _m.Called(deviceID, p)
 
-	var r0 error
-	if rf, ok := ret.Get(0).(func(string, *domain.Payload) error); ok {
+	var r0 *defines.ResponseStatus
+	var r1 error
+	if rf, ok := ret.Get(0).(func(string, *domain.Payload) (*defines.ResponseStatus, error)); ok {
+		return rf(deviceID, p)
+	}
+	if rf, ok := ret.Get(0).(func(string, *domain.Payload) *defines.ResponseStatus); ok {
 		r0 = rf(deviceID, p)
 	} else {
-		r0 = ret.Error(0)
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*defines.ResponseStatus)
+		}
 	}
 
-	return r0
+	if rf, ok := ret.Get(1).(func(string, *domain.Payload) error); ok {
+		r1 = rf(deviceID, p)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
 }
 
 type mockConstructorTestingTNewMockZoneService interface {

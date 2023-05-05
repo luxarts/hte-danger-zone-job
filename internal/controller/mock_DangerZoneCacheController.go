@@ -27,6 +27,20 @@ func (_m *MockDangerZoneCacheController) Create(body *domain.DangerZone) error {
 	return r0
 }
 
+// DeleteByDeviceID provides a mock function with given fields: deviceID
+func (_m *MockDangerZoneCacheController) DeleteByDeviceID(deviceID string) error {
+	ret := _m.Called(deviceID)
+
+	var r0 error
+	if rf, ok := ret.Get(0).(func(string) error); ok {
+		r0 = rf(deviceID)
+	} else {
+		r0 = ret.Error(0)
+	}
+
+	return r0
+}
+
 // GetByDeviceID provides a mock function with given fields: deviceID
 func (_m *MockDangerZoneCacheController) GetByDeviceID(deviceID string) (*domain.DangerZone, error) {
 	ret := _m.Called(deviceID)

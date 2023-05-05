@@ -10,7 +10,7 @@ import (
 )
 
 type AlarmRepository interface {
-	Send(deviceID string, companyID string, message string) error
+	Send(deviceID string, companyID string, message string, latitude float64, longitude float64, countryID int) error
 }
 
 type alarmRepository struct {
@@ -25,7 +25,7 @@ func NewAlarmRepository(rc *redis.Client, alarmsQueue string) AlarmRepository {
 	}
 }
 
-func (repo *alarmRepository) Send(deviceID string, companyID string, message string) error {
+func (repo *alarmRepository) Send(deviceID string, companyID string, message string, latitude float64, longitude float64, countryID int) error {
 	log.Printf("Sending alarm: %s->%s\n", deviceID, message)
 
 	ctx := context.Background()
@@ -36,9 +36,12 @@ func (repo *alarmRepository) Send(deviceID string, companyID string, message str
 		Action:    "create",
 		Timestamp: time.Now().Unix(),
 		CompanyID: companyID,
-		Position:  domain.AlarmPosition{},
+		Position: domain.AlarmPosition{
+			Latitude:  latitude,
+			Longitude: longitude,
+		},
 		Text:      message,
-		CountryID: 0,
+		CountryID: countryID,
 		Device:    domain.AlarmDevice{},
 	}
 

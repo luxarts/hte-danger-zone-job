@@ -1,5 +1,15 @@
 package domain
 
+type SendAlarmReq struct {
+	DeviceID string `json:"device_id"`
+	Message  string `json:"message"`
+}
+
+func (b *SendAlarmReq) IsValid() bool {
+	return b.DeviceID != "" &&
+		b.Message != ""
+}
+
 type Alarm struct {
 	AssetID   string        `json:"asset_id"`
 	Type      string        `json:"type"`
